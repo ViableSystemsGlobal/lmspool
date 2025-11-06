@@ -6,8 +6,9 @@ cmds = ["npm ci"]
 
 [phases.build]
 cmds = [
-  "npm ci",
-  "ls node_modules | grep -E '(tailwindcss|postcss)' || echo 'WARNING: tailwindcss or postcss not found'",
+  "npm ci --verbose",
+  "test -d node_modules/tailwindcss && echo 'tailwindcss: OK' || (echo 'tailwindcss: MISSING' && exit 1)",
+  "test -d node_modules/postcss && echo 'postcss: OK' || (echo 'postcss: MISSING' && exit 1)",
   "npx prisma generate",
   "npm run build"
 ]
