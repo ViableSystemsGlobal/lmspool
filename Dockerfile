@@ -15,10 +15,17 @@ WORKDIR /app
 
 # Copy dependencies from deps stage
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+
+# Copy Prisma files first (needed for generate)
+COPY prisma ./prisma
+COPY prisma.config.ts* ./
+COPY package.json ./
 
 # Generate Prisma client
 RUN npx prisma generate
+
+# Copy the rest of the application
+COPY . .
 
 # Build the application
 ENV NODE_OPTIONS="--max_old_space_size=4096"
