@@ -19,8 +19,6 @@ const nextConfig: NextConfig = {
     ],
     unoptimized: false,
   },
-  // Acknowledge Turbopack usage (Next.js 16 default)
-  turbopack: {},
 };
 
 export default nextConfig;
