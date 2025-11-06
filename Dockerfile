@@ -19,8 +19,8 @@ COPY --from=deps /app/node_modules ./node_modules
 # Copy the entire application (including Prisma files)
 COPY . .
 
-# Generate Prisma client
-RUN npx prisma generate
+# Generate Prisma client (explicitly specify schema path)
+RUN npx prisma generate --schema=./prisma/schema.prisma
 
 # Build the application
 ENV NODE_OPTIONS="--max_old_space_size=4096"
