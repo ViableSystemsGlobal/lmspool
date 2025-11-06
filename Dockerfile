@@ -19,6 +19,9 @@ COPY --from=deps /app/node_modules ./node_modules
 # Copy the entire application (including Prisma files)
 COPY . .
 
+# Debug: List files to verify prisma directory exists
+RUN ls -la && echo "--- Checking prisma directory ---" && ls -la prisma/ || echo "prisma directory not found"
+
 # Generate Prisma client (explicitly specify schema path)
 RUN npx prisma generate --schema=./prisma/schema.prisma
 
