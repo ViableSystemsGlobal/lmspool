@@ -7,13 +7,9 @@ cmds = ["npm ci"]
 [phases.build]
 cmds = [
   "npm ci",
-  "echo '=== Checking node_modules ==='",
-  "ls -la node_modules | head -20",
-  "test -d node_modules/tailwindcss && echo '✓ tailwindcss found' || (echo '✗ tailwindcss NOT found!' && npm list tailwindcss 2>&1 || true)",
-  "test -d node_modules/postcss && echo '✓ postcss found' || (echo '✗ postcss NOT found!' && npm list postcss 2>&1 || true)",
-  "echo '=== Running build ==='",
+  "ls node_modules | grep -E '(tailwindcss|postcss)' || echo 'WARNING: tailwindcss or postcss not found'",
   "npx prisma generate",
-  "npm run build 2>&1 | head -100"
+  "npm run build"
 ]
 
 [start]
