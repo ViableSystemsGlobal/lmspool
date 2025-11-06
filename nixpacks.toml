@@ -2,14 +2,12 @@
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = [
-  "npm ci",
-  "test -d node_modules/tailwindcss || (echo 'ERROR: tailwindcss not installed!' && exit 1)",
-  "test -d node_modules/postcss || (echo 'ERROR: postcss not installed!' && exit 1)"
-]
+cmds = ["npm ci"]
 
 [phases.build]
 cmds = [
+  "npm ci",
+  "test -d node_modules/tailwindcss || (echo 'ERROR: tailwindcss not found after COPY!' && npm list tailwindcss && exit 1)",
   "npx prisma generate",
   "npm run build"
 ]
