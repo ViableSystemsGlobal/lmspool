@@ -2,7 +2,11 @@
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["npm ci --verbose"]
+cmds = [
+  "npm ci",
+  "ls node_modules | grep tailwindcss || echo 'tailwindcss not found!'",
+  "npm list tailwindcss || true"
+]
 
 [phases.build]
 cmds = [
