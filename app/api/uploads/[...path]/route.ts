@@ -5,13 +5,13 @@ import { existsSync } from 'fs'
 
 const STORAGE_PATH = process.env.STORAGE_PATH || './uploads'
 
-type UploadRouteContext = { params: { path?: string[] } }
+type UploadRouteParams = { params: { path: string[] } }
 
-export async function GET(req: NextRequest, context: UploadRouteContext) {
+export async function GET(req: NextRequest, { params }: UploadRouteParams) {
   try {
-    const pathSegments = context?.params?.path ?? []
+    const pathSegments = Array.isArray(params?.path) ? params.path : []
 
-    if (!Array.isArray(pathSegments) || pathSegments.length === 0) {
+    if (pathSegments.length === 0) {
       return NextResponse.json(
         { error: 'Path is required' },
         { status: 400 }
