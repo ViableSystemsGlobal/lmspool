@@ -1,6 +1,14 @@
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS citext;
 
+-- Clean up any previous failed attempts
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'RoleName') THEN
+    DROP TYPE "RoleName";
+  END IF;
+END $$;
+
 -- CreateEnum
 CREATE TYPE "RoleName" AS ENUM ('LEARNER', 'MANAGER', 'ADMIN', 'SUPER_ADMIN');
 
