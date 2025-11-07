@@ -1,0 +1,776 @@
+// Prisma Schema - LMS Full System
+// All 13 modules integrated
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===== MODULE 1: Auth & RBAC =====
+enum RoleName {
+  LEARNER
+  MANAGER
+  ADMIN
+  SUPER_ADMIN
+}
+
+model Role {
+  id          Int       @id @default(autoincrement())
+  name        RoleName  @unique
+  description String?
+  users       UserRole[]
+}
+
+model User {
+  id                BigInt       @id @default(autoincrement())
+  name              String
+  email             String       @unique @db.Citext
+  phone             String?
+  departmentId     BigInt?      @map("department_id")
+  status            String       @default("active")
+  jobTitle          String?      @map("job_title")
+  employeeCode      String?      @unique @map("employee_code")
+  avatarUrl         String?      @map("avatar_url")
+  deactivatedAt     DateTime?    @map("deactivated_at") @db.Timestamptz
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  
+  department        Department?  @relation("DepartmentMembers", fields: [departmentId], references: [id])
+  managedDepartment Department? @relation("DepartmentManager")
+  roles             UserRole[]
+  sessions          Session[]
+  auditLogs         AuditLog[]   @relation("ActorUser")
+  uploadedFiles     File[]
+  assignedCourses   Assignment[] @relation("AssignedBy")
+  enrollments       Enrollment[]
+  progress          Progress[]
+  quizAttempts      QuizAttempt[]
+  certificates      Certificate[]
+  notes             Note[]
+  earnedBadges      UserBadge[]
+  sentMessages      Message[]    @relation("Sender")
+  notifications     Notification[]
+  importJobs        UserImportJob[]
+  
+  @@map("users")
+  @@index([departmentId])
+  @@index([email])
+}
+
+model UserRole {
+  userId    BigInt @map("user_id")
+  roleId    Int    @map("role_id")
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model AuthOtp {
+  id           BigInt    @id @default(autoincrement())
+  email        String    @db.Citext
+  code         String    @db.Char(6)
+  purpose      String    @default("login")
+  attemptsLeft Int       @default(5) @map("attempts_left")
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  consumedAt   DateTime? @map("consumed_at") @db.Timestamptz
+  
+  @@map("auth_otps")
+  @@index([email])
+  @@index([expiresAt])
+}
+
+model Session {
+  id        String    @id @default(uuid())
+  userId    BigInt    @map("user_id")
+  userAgent String?   @map("user_agent")
+  ip        String?   @db.Inet
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ===== MODULE 2: Organization & Directory =====
+model Department {
+  id            BigInt       @id @default(autoincrement())
+  name          String       @unique
+  code          String?      @unique
+  parentId      BigInt?      @map("parent_id")
+  managerUserId BigInt?      @unique @map("manager_user_id")
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  
+  parent        Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children      Department[] @relation("DepartmentHierarchy")
+  manager       User?        @relation("DepartmentManager", fields: [managerUserId], references: [id])
+  members       User[]      @relation("DepartmentMembers")
+  assignments   AssignmentTarget[] @relation("DepartmentAssignment")
+  autoEnrollRules AutoEnrollRule[]
+  
+  @@map("departments")
+}
+
+model UserImportJob {
+  id           BigInt   @id @default(autoincrement())
+  uploadedById BigInt   @map("uploaded_by_id")
+  sourceFilename String @map("source_filename")
+  totalRows    Int      @map("total_rows")
+  processedRows Int     @default(0) @map("processed_rows")
+  status       String   @default("pending")
+  errorSummary String?  @map("error_summary")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  completedAt  DateTime? @map("completed_at") @db.Timestamptz
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  rows         UserImportJobRow[]
+  
+  @@map("user_import_jobs")
+}
+
+model UserImportJobRow {
+  id        BigInt   @id @default(autoincrement())
+  jobId     BigInt   @map("job_id")
+  rowNumber Int      @map("row_number")
+  rawJson   Json     @map("raw_json")
+  outcome   String?  @default("skipped")
+  message   String?
+  job       UserImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  @@map("user_import_job_rows")
+  @@index([jobId])
+}
+
+// ===== MODULE 3: Course Authoring Studio =====
+model Course {
+  id                  BigInt          @id @default(autoincrement())
+  title               String
+  description         String?
+  category            String?
+  passMark            Int             @default(70) @map("pass_mark")
+  status              String          @default("draft")
+  difficulty          String?
+  estimatedDurationMin Int?           @map("estimated_duration_min")
+  tags                String[]       @default([])
+  imageUrl            String?         @map("image_url")
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+  
+  versions            CourseVersion[]
+  modules             Module[]
+  quizzes             Quiz[]
+  assignments         Assignment[]
+  enrollments         Enrollment[]
+  certificates        Certificate[]
+  templates           CourseTemplate[]
+  learningPathCourses LearningPathCourse[]
+  autoEnrollRules     AutoEnrollRule[]
+  competencies        CourseCompetency[]
+  
+  @@map("courses")
+  @@index([status])
+  @@index([category])
+}
+
+model CourseVersion {
+  id          BigInt    @id @default(autoincrement())
+  courseId    BigInt    @map("course_id")
+  versionLabel String   @map("version_label")
+  description String?
+  status      String    @default("draft") // draft|published|archived
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  publishedAt DateTime? @map("published_at") @db.Timestamptz
+  course      Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  @@map("course_versions")
+  @@index([courseId])
+}
+
+model Module {
+  id        BigInt    @id @default(autoincrement())
+  courseId  BigInt    @map("course_id")
+  title     String
+  order     Int       @default(0)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  course    Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons   Lesson[]
+  
+  @@map("modules")
+  @@index([courseId])
+}
+
+model Lesson {
+  id          BigInt    @id @default(autoincrement())
+  moduleId    BigInt    @map("module_id")
+  type        String    // text|video|pdf
+  title       String
+  contentUrl  String?   @map("content_url")
+  contentHtml String?   @map("content_html")
+  durationMin Int?      @map("duration_min")
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  module      Module    @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  progress    Progress[]
+  notes       Note[]
+  assets      LessonAsset[]
+  
+  @@map("lessons")
+  @@index([moduleId])
+}
+
+model LessonAsset {
+  id        BigInt  @id @default(autoincrement())
+  lessonId  BigInt  @map("lesson_id")
+  fileId    BigInt  @map("file_id")
+  type      String  // video|pdf|image|audio
+  lesson    Lesson  @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  file      File    @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  
+  @@map("lesson_assets")
+  @@unique([lessonId, fileId])
+}
+
+model CourseTemplate {
+  id            BigInt    @id @default(autoincrement())
+  name          String
+  description   String?
+  structureJson Json      @map("structure_json")
+  defaultPassMark Int?   @map("default_pass_mark")
+  courseId      BigInt?  @map("course_id")
+  course        Course?  @relation(fields: [courseId], references: [id])
+  
+  @@map("course_templates")
+}
+
+// ===== MODULE 4: Content Library =====
+model File {
+  id          BigInt      @id @default(autoincrement())
+  url         String
+  mime        String
+  size        BigInt
+  uploadedById BigInt     @map("uploaded_by_id")
+  description String?
+  categoryId  BigInt?     @map("category_id")
+  tags        String[]    @default([])
+  versionNo   Int         @default(1) @map("version_no")
+  parentFileId BigInt?    @map("parent_file_id")
+  durationSec Int?        @map("duration_sec")
+  resolution  String?
+  externalUrl String?     @map("external_url")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  
+  uploadedBy  User        @relation(fields: [uploadedById], references: [id])
+  category    FileCategory? @relation(fields: [categoryId], references: [id])
+  parentFile  File?       @relation("FileVersions", fields: [parentFileId], references: [id])
+  versions    File[]      @relation("FileVersions")
+  lessonAssets LessonAsset[]
+  permissions FilePermission[]
+  
+  @@map("files")
+  @@index([uploadedById])
+  @@index([categoryId])
+}
+
+model FileCategory {
+  id          BigInt          @id @default(autoincrement())
+  name        String
+  description String?
+  parentId    BigInt?         @map("parent_id")
+  parent      FileCategory?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    FileCategory[]  @relation("CategoryHierarchy")
+  files       File[]
+  
+  @@map("file_categories")
+}
+
+model FilePermission {
+  id           BigInt   @id @default(autoincrement())
+  fileId       BigInt   @map("file_id")
+  departmentId BigInt?  @map("department_id")
+  role         String?
+  canView      Boolean  @default(true) @map("can_view")
+  canEdit      Boolean  @default(false) @map("can_edit")
+  canDelete    Boolean  @default(false) @map("can_delete")
+  file         File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  
+  @@map("file_permissions")
+}
+
+// ===== MODULE 5: Assessment Engine =====
+model Quiz {
+  id                BigInt        @id @default(autoincrement())
+  courseId          BigInt        @map("course_id")
+  timeLimitSec      Int?          @map("time_limit_sec")
+  attemptsAllowed   Int           @default(1) @map("attempts_allowed")
+  randomize         Boolean       @default(false)
+  passMarkOverride   Int?          @map("pass_mark_override")
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  course            Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  questions         Question[]
+  attempts          QuizAttempt[]
+  
+  @@map("quizzes")
+  @@index([courseId])
+}
+
+model Question {
+  id            BigInt    @id @default(autoincrement())
+  quizId        BigInt    @map("quiz_id")
+  type          String    // single_choice|multi_choice|true_false|short_answer
+  promptHtml    String    @map("prompt_html")
+  order         Int       @default(0)
+  points        Int       @default(1)
+  difficulty    String?
+  categoryId    BigInt?   @map("category_id")
+  tags          String[]  @default([])
+  mediaFileId   BigInt?   @map("media_file_id")
+  explanationHtml String? @map("explanation_html")
+  quiz          Quiz      @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  options       QuestionOption[]
+  attemptAnswers QuizAttemptAnswer[]
+  poolMemberships QuestionPoolMembership[]
+  
+  @@map("questions")
+  @@index([quizId])
+}
+
+model QuestionOption {
+  id         BigInt   @id @default(autoincrement())
+  questionId BigInt   @map("question_id")
+  label      String
+  isCorrect  Boolean  @default(false) @map("is_correct")
+  order      Int      @default(0)
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  attemptAnswers QuizAttemptAnswer[]
+  
+  @@map("question_options")
+  @@index([questionId])
+}
+
+model QuestionPool {
+  id          BigInt                  @id @default(autoincrement())
+  name        String
+  description String?
+  courseId    BigInt?                 @map("course_id")
+  categoryId  BigInt?                 @map("category_id")
+  questions   QuestionPoolMembership[]
+  
+  @@map("question_pools")
+}
+
+model QuestionPoolMembership {
+  poolId    BigInt    @map("pool_id")
+  questionId BigInt   @map("question_id")
+  pool      QuestionPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  question  Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  
+  @@id([poolId, questionId])
+  @@map("question_pool_memberships")
+}
+
+model QuizAttempt {
+  id          BigInt    @id @default(autoincrement())
+  quizId      BigInt    @map("quiz_id")
+  userId      BigInt    @map("user_id")
+  score       Int
+  startedAt   DateTime  @map("started_at") @db.Timestamptz
+  submittedAt DateTime? @map("submitted_at") @db.Timestamptz
+  passed      Boolean   @default(false)
+  attemptNo   Int       @map("attempt_no")
+  quiz        Quiz      @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers     QuizAttemptAnswer[]
+  
+  @@map("quiz_attempts")
+  @@index([quizId])
+  @@index([userId])
+}
+
+model QuizAttemptAnswer {
+  id         BigInt       @id @default(autoincrement())
+  attemptId  BigInt       @map("attempt_id")
+  questionId BigInt       @map("question_id")
+  optionId   BigInt?      @map("option_id")
+  responseText String?    @map("response_text")
+  isCorrect  Boolean?     @map("is_correct")
+  question   Question     @relation(fields: [questionId], references: [id])
+  option     QuestionOption? @relation(fields: [optionId], references: [id])
+  attempt    QuizAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  
+  @@map("quiz_attempt_answers")
+  @@index([attemptId])
+}
+
+// ===== MODULE 6: Assignments & Enrolment =====
+model Assignment {
+  id                  BigInt            @id @default(autoincrement())
+  courseId            BigInt            @map("course_id")
+  assignedById        BigInt            @map("assigned_by_id")
+  dueAt               DateTime?         @map("due_at") @db.Timestamptz
+  scope               String            // user|department|all|role|path
+  graceDays           Int?              @default(0) @map("grace_days")
+  recurrenceIntervalMonths Int?         @map("recurrence_interval_months")
+  mandatory           Boolean           @default(true)
+  prerequisitesJson   Json?             @map("prerequisites_json")
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  course              Course            @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  assignedBy          User              @relation("AssignedBy", fields: [assignedById], references: [id])
+  targets             AssignmentTarget[]
+  enrollments         Enrollment[]
+  
+  @@map("assignments")
+  @@index([courseId])
+}
+
+model AssignmentTarget {
+  id           BigInt      @id @default(autoincrement())
+  assignmentId BigInt      @map("assignment_id")
+  userId       BigInt?     @map("user_id")
+  departmentId BigInt?     @map("department_id")
+  role         String?
+  assignment   Assignment  @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  department   Department? @relation("DepartmentAssignment", fields: [departmentId], references: [id])
+  
+  @@map("assignment_targets")
+  @@index([assignmentId])
+}
+
+model LearningPath {
+  id          BigInt              @id @default(autoincrement())
+  name        String
+  description String?
+  createdById BigInt              @map("created_by_id")
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  courses     LearningPathCourse[]
+  autoEnrollRules AutoEnrollRule[]
+  
+  @@map("learning_paths")
+}
+
+model LearningPathCourse {
+  learningPathId BigInt      @map("learning_path_id")
+  courseId       BigInt      @map("course_id")
+  order          Int         @default(0)
+  mandatory      Boolean     @default(true)
+  learningPath   LearningPath @relation(fields: [learningPathId], references: [id], onDelete: Cascade)
+  course         Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  @@id([learningPathId, courseId])
+  @@map("learning_path_courses")
+}
+
+model AutoEnrollRule {
+  id          BigInt    @id @default(autoincrement())
+  trigger     String    // on_user_created|on_role_change|on_department_added
+  departmentId BigInt?   @map("department_id")
+  roleId      Int?
+  courseId    BigInt?   @map("course_id")
+  pathId      BigInt?   @map("path_id")
+  dueDays     Int?      @default(30) @map("due_days")
+  department  Department? @relation(fields: [departmentId], references: [id])
+  course      Course?   @relation(fields: [courseId], references: [id])
+  learningPath LearningPath? @relation(fields: [pathId], references: [id])
+  
+  @@map("auto_enroll_rules")
+}
+
+model Enrollment {
+  id                      BigInt      @id @default(autoincrement())
+  userId                  BigInt      @map("user_id")
+  courseId                BigInt      @map("course_id")
+  assignedViaAssignmentId BigInt?     @map("assigned_via_assignment_id")
+  status                  String      @default("assigned") // assigned|started|completed
+  startedAt               DateTime?    @map("started_at") @db.Timestamptz
+  completedAt             DateTime?    @map("completed_at") @db.Timestamptz
+  certificateId           BigInt?     @map("certificate_id")
+  dueAt                   DateTime?   @map("due_at") @db.Timestamptz
+  mandatory               Boolean      @default(true)
+  recertificationDueAt   DateTime?   @map("recertification_due_at") @db.Timestamptz
+  bookmarked              Boolean      @default(false)
+  rating                  Int?
+  feedback                String?
+  recommendationReason    String?      @map("recommendation_reason")
+  createdAt               DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  user                    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course                  Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  assignment              Assignment?  @relation(fields: [assignedViaAssignmentId], references: [id])
+  certificate             Certificate? @relation(fields: [certificateId], references: [id])
+  
+  @@map("enrollments")
+  @@index([userId])
+  @@index([courseId])
+  @@index([status])
+}
+
+model Progress {
+  id            BigInt    @id @default(autoincrement())
+  userId        BigInt    @map("user_id")
+  lessonId      BigInt    @map("lesson_id")
+  status        String    @default("seen") // seen|completed
+  lastViewedAt  DateTime  @default(now()) @map("last_viewed_at") @db.Timestamptz
+  timeSpentSec  Int?      @default(0) @map("time_spent_sec")
+  attemptsCount Int      @default(0) @map("attempts_count")
+  lastActivityAt DateTime? @map("last_activity_at") @db.Timestamptz
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson        Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  
+  @@map("progress")
+  @@unique([userId, lessonId])
+  @@index([userId])
+  @@index([lessonId])
+}
+
+// ===== MODULE 7: Course Player & Learner Portal =====
+model Note {
+  id        BigInt    @id @default(autoincrement())
+  userId    BigInt    @map("user_id")
+  lessonId  BigInt    @map("lesson_id")
+  content   String
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson    Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  
+  @@map("notes")
+  @@index([userId, lessonId])
+}
+
+model Badge {
+  id          BigInt      @id @default(autoincrement())
+  name        String
+  description String?
+  criteriaJson Json       @map("criteria_json")
+  imageFileId BigInt?     @map("image_file_id")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  userBadges  UserBadge[]
+  
+  @@map("badges")
+}
+
+model UserBadge {
+  id          BigInt    @id @default(autoincrement())
+  userId      BigInt    @map("user_id")
+  badgeId     BigInt    @map("badge_id")
+  earnedAt    DateTime  @default(now()) @map("earned_at") @db.Timestamptz
+  evidenceUrl String?   @map("evidence_url")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge       Badge     @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  
+  @@map("user_badges")
+  @@unique([userId, badgeId])
+}
+
+// ===== MODULE 8: Progress Tracking =====
+// Most tables already defined (Progress, Enrollment, QuizAttempt)
+// Adding analytics aggregation tables
+
+model AnalyticsCourse {
+  id                BigInt    @id @default(autoincrement())
+  courseId          BigInt    @unique @map("course_id")
+  assignedCount     Int       @default(0) @map("assigned_count")
+  startedCount      Int       @default(0) @map("started_count")
+  completedCount    Int       @default(0) @map("completed_count")
+  averageScore      Decimal?  @map("average_score") @db.Decimal(5,2)
+  averageTimeSpent  Int?      @map("average_time_spent")
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  
+  @@map("analytics_course")
+}
+
+model Competency {
+  id          BigInt              @id @default(autoincrement())
+  name        String
+  description String?
+  courseCompetencies CourseCompetency[]
+  userCompetencies   UserCompetency[]
+  
+  @@map("competencies")
+}
+
+model CourseCompetency {
+  courseId    BigInt    @map("course_id")
+  competencyId BigInt   @map("competency_id")
+  course      Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  competency  Competency @relation(fields: [competencyId], references: [id], onDelete: Cascade)
+  
+  @@id([courseId, competencyId])
+  @@map("course_competencies")
+}
+
+model UserCompetency {
+  id          BigInt    @id @default(autoincrement())
+  userId      BigInt    @map("user_id")
+  competencyId BigInt   @map("competency_id")
+  level       String?
+  achievedAt  DateTime? @map("achieved_at") @db.Timestamptz
+  competency  Competency @relation(fields: [competencyId], references: [id], onDelete: Cascade)
+  
+  @@map("user_competencies")
+  @@unique([userId, competencyId])
+}
+
+// ===== MODULE 9: Certificates & Credentials =====
+model Certificate {
+  id          BigInt     @id @default(autoincrement())
+  userId      BigInt     @map("user_id")
+  courseId    BigInt     @map("course_id")
+  number      String     @unique
+  pdfUrl      String     @map("pdf_url")
+  issuedAt    DateTime   @default(now()) @map("issued_at") @db.Timestamptz
+  expiryAt    DateTime?  @map("expiry_at") @db.Timestamptz
+  templateId BigInt?     @map("template_id")
+  qrCodeUrl   String?    @map("qr_code_url")
+  badgeId     BigInt?     @map("badge_id")
+  revokedAt   DateTime?  @map("revoked_at") @db.Timestamptz
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course      Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  enrollments Enrollment[]
+  
+  @@map("certificates")
+  @@index([userId])
+  @@index([courseId])
+  @@index([number])
+}
+
+model CertificateTemplate {
+  id                BigInt    @id @default(autoincrement())
+  name              String
+  description       String?
+  fileUrl           String?   @map("file_url")
+  backgroundFileId  BigInt?   @map("background_file_id")
+  designJson        Json      @map("design_json")
+  defaultExpiryDays Int?      @map("default_expiry_days")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  
+  @@map("certificate_templates")
+}
+
+// ===== MODULE 10: Reporting & Exports =====
+// Most data already available in existing tables
+// Custom reports stored as JSON configurations
+
+// ===== MODULE 11: Notifications & Messaging =====
+model Notification {
+  id        BigInt    @id @default(autoincrement())
+  type      String    // assignment|reminder|completion|expiry
+  userId    BigInt    @map("user_id")
+  channel   String    // email|sms|whatsapp|push|in_app
+  subject   String?
+  body      String
+  status    String    @default("queued") // queued|sent|failed
+  sendAt    DateTime? @map("send_at") @db.Timestamptz
+  sentAt    DateTime? @map("sent_at") @db.Timestamptz
+  metaJson  Json?     @default("{}") @map("meta_json")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("notifications")
+  @@index([userId])
+  @@index([status])
+  @@index([sendAt])
+}
+
+model NotificationTemplate {
+  id              BigInt    @id @default(autoincrement())
+  name            String
+  type            String
+  language        String    @default("en")
+  subjectTemplate String    @map("subject_template")
+  bodyTemplate    String    @map("body_template")
+  version         Int       @default(1)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  
+  @@map("notification_templates")
+  @@unique([type, language, version])
+}
+
+model UserNotificationPreference {
+  id      BigInt   @id @default(autoincrement())
+  userId  BigInt   @map("user_id")
+  channel String
+  optIn   Boolean  @default(true) @map("opt_in")
+  
+  @@map("user_notification_preferences")
+  @@unique([userId, channel])
+}
+
+model MessageThread {
+  id              BigInt    @id @default(autoincrement())
+  participantsJson Json     @map("participants_json")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  lastMessageAt   DateTime? @map("last_message_at") @db.Timestamptz
+  messages        Message[]
+  
+  @@map("message_threads")
+}
+
+model Message {
+  id              BigInt       @id @default(autoincrement())
+  threadId        BigInt       @map("thread_id")
+  senderId        BigInt       @map("sender_id")
+  content         String
+  attachmentsJson Json?        @default("[]") @map("attachments_json")
+  readByJson      Json?        @default("[]") @map("read_by_json")
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  thread          MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender          User         @relation("Sender", fields: [senderId], references: [id])
+  
+  @@map("messages")
+  @@index([threadId])
+}
+
+// ===== MODULE 12: Admin Settings =====
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy BigInt?  @map("updated_by")
+  
+  @@map("settings")
+}
+
+// ===== MODULE 13: Audit Logs & Security =====
+model AuditLog {
+  id            BigInt    @id @default(autoincrement())
+  actorUserId   BigInt?   @map("actor_user_id")
+  action        String    // create|update|delete|publish|assign|etc
+  entityType    String?   @map("entity_type")
+  entityId      String?   @map("entity_id")
+  ip            String?   @db.Inet
+  userAgent     String?   @map("user_agent")
+  ts            DateTime  @default(now()) @db.Timestamptz
+  meta          Json      @default("{}")
+  changedFields Json?     @map("changed_fields")
+  actorUser     User?     @relation("ActorUser", fields: [actorUserId], references: [id])
+  
+  @@map("audit_logs")
+  @@index([actorUserId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([ts])
+}
+
+model SecurityEvent {
+  id              BigInt    @id @default(autoincrement())
+  eventType       String    @map("event_type")
+  description     String
+  detectedAt      DateTime  @default(now()) @map("detected_at") @db.Timestamptz
+  severity        String    // low|medium|high|critical
+  resolvedAt      DateTime? @map("resolved_at") @db.Timestamptz
+  resolutionNotes String?   @map("resolution_notes")
+  
+  @@map("security_events")
+  @@index([severity])
+  @@index([resolvedAt])
+}
