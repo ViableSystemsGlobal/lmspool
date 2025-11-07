@@ -1,6 +1,5 @@
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS citext;
-CREATE EXTENSION IF NOT EXISTS inet;
 
 -- CreateEnum
 CREATE TYPE "RoleName" AS ENUM ('LEARNER', 'MANAGER', 'ADMIN', 'SUPER_ADMIN');
