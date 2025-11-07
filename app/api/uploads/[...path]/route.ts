@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { existsSync } from 'fs'
@@ -6,7 +6,7 @@ import { existsSync } from 'fs'
 const STORAGE_PATH = process.env.STORAGE_PATH || './uploads'
 
 export async function GET(
-  req: NextRequest,
+  _req: Request,
   { params }: { params: { path: string[] } }
 ) {
   try {
@@ -43,7 +43,7 @@ export async function GET(
     const ext = filename.split('.').pop()?.toLowerCase()
     const contentType = getContentType(ext || '')
 
-    return new NextResponse(file, {
+    return new Response(file, {
       headers: {
         'Content-Type': contentType,
         'Cache-Control': 'public, max-age=31536000, immutable',
