@@ -5,9 +5,10 @@ import { existsSync } from 'fs'
 
 const STORAGE_PATH = process.env.STORAGE_PATH || './uploads'
 
-type UploadRouteParams = { params: { path: string[] } }
-
-export async function GET(req: NextRequest, { params }: UploadRouteParams) {
+export async function GET(
+  req: NextRequest,
+  { params }: { params: { path: string[] } }
+) {
   try {
     const pathSegments = Array.isArray(params?.path) ? params.path : []
 
