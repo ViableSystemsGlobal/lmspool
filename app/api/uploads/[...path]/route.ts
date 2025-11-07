@@ -5,12 +5,12 @@ import { existsSync } from 'fs'
 
 const STORAGE_PATH = process.env.STORAGE_PATH || './uploads'
 
-export async function GET(
-  _req: Request,
-  { params }: { params: { path: string[] } }
-) {
+export async function GET(req: Request) {
   try {
-    const pathSegments = Array.isArray(params?.path) ? params.path : []
+    const url = new URL(req.url)
+    const segments = url.pathname.split('/').filter(Boolean)
+    const uploadsIndex = segments.findIndex((segment) => segment === 'uploads')
+    const pathSegments = uploadsIndex >= 0 ? segments.slice(uploadsIndex + 1) : []
 
     if (pathSegments.length === 0) {
       return NextResponse.json(
