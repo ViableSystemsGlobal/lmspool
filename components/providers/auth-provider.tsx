@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 
 interface User {
   id: string
@@ -21,7 +21,9 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [initialFetchComplete, setInitialFetchComplete] = useState(false)
   const pathname = usePathname()
+  const router = useRouter()
 
   const fetchUser = useCallback(async () => {
     setLoading(true)
@@ -32,12 +34,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (response.ok) {
         const data = await response.json()
         if (data.user) {
-          // Only set user if roles are present (user should always have roles)
           if (data.user.roles && Array.isArray(data.user.roles) && data.user.roles.length > 0) {
             setUser(data.user)
           } else {
             console.warn('User has no roles:', data.user)
-            setUser(data.user) // Still set user, but AppLayout will handle the empty roles case
+            setUser(data.user)
           }
         } else {
           setUser(null)
@@ -50,6 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null)
     } finally {
       setLoading(false)
+      setInitialFetchComplete(true)
     }
   }, [])
 
@@ -57,13 +59,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     fetchUser()
   }, [fetchUser])
 
-  // Refetch user when navigating away from signin page (in case user just logged in)
   useEffect(() => {
-    if (pathname && !pathname.startsWith('/signin') && !user && !loading) {
-      // If we're not on signin and have no user, try fetching again
-      fetchUser()
+    if (!initialFetchComplete || loading) return
+    if (!pathname) return
+
+    const isOnSignin = pathname.startsWith('/signin')
+
+    if (!user && !isOnSignin) {
+      router.replace('/signin')
     }
-  }, [pathname, user, loading, fetchUser])
+  }, [pathname, user, loading, initialFetchComplete, router])
 
   return (
     <AuthContext.Provider value={{ user, loading, refresh: fetchUser }}>
