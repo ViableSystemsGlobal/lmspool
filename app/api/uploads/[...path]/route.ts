@@ -5,13 +5,20 @@ import { existsSync } from 'fs'
 
 const STORAGE_PATH = process.env.STORAGE_PATH || './uploads'
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> | { path: string[] } }
-) {
+type UploadRouteContext = { params: { path?: string[] } }
+
+export async function GET(req: NextRequest, context: UploadRouteContext) {
   try {
-    const resolvedParams = await Promise.resolve(params)
-    const filename = resolvedParams.path.join('/')
+    const pathSegments = context?.params?.path ?? []
+
+    if (!Array.isArray(pathSegments) || pathSegments.length === 0) {
+      return NextResponse.json(
+        { error: 'Path is required' },
+        { status: 400 }
+      )
+    }
+
+    const filename = pathSegments.join('/')
     const filepath = join(STORAGE_PATH, filename)
 
     // Security: prevent directory traversal
