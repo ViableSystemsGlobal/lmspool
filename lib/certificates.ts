@@ -1,12 +1,16 @@
-import PDFDocument from 'pdfkit'
+import type PDFDocumentType from 'pdfkit'
+// pdfkit ships both ESM and CJS builds. We explicitly require the CJS build so that
+// runtime __dirname lookups (for bundled font metrics) resolve relative to the server
+// filesystem, preventing missing AFM files in production environments.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const PDFDocument = require('pdfkit') as typeof PDFDocumentType
 import { prisma } from './prisma'
 import { randomBytes } from 'crypto'
-import { writeFile, mkdir, createWriteStream } from 'fs'
+import { createWriteStream } from 'fs'
 import { promises as fsPromises } from 'fs'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { toBuffer } from 'qrcode'
-import { readFileSync } from 'fs'
 
 const CERTIFICATES_PATH = process.env.CERTIFICATES_PATH || './certificates'
 const QR_CODE_PATH = process.env.QR_CODE_PATH || './certificates/qrcodes'
